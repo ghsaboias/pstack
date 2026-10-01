@@ -1,7 +1,6 @@
 ---
 name: why
-description: "Use for 'why does X work this way', 'why we picked Y', design rationale, regressions, postmortems, or data-backed thresholds. Discovers available MCPs and queries each evidence category (source control, issue tracker, long-form docs, real-time chat, infrastructure observability, error tracking, product analytics warehouse) in parallel, then returns a cited read on decisions and tradeoffs. Use how for runtime behavior."
-disable-model-invocation: true
+description: "Design-rationale investigation with parallel Sonnet investigators across git, issues, docs, and chat. Use only when the user explicitly asks why something was built or decided a certain way (\"why was X designed like this\", \"what was the reasoning behind Y\", postmortems, regressions), or when the teach skill calls for it. Not for quick questions a git blame answers. Use how for runtime behavior."
 ---
 
 # Why
@@ -10,7 +9,7 @@ Investigate the motivation and intent behind code.
 
 Companion to the `how` skill. `how` answers what the code does and how it works. `why` answers what forces led to its shape.
 
-Each spawn below names a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.
+Every spawn below uses `subagent_type: general-purpose` and `model: sonnet`. Never use `fork`: it inherits the full parent context and the parent model. The main thread is the only Opus-class agent; it coordinates and writes the final reply.
 
 ## Operating Posture
 
@@ -61,7 +60,7 @@ Capture this as seed context (file paths, symbols, commits, PR numbers, linked t
 
 ### Discovery
 
-Before spawning investigators, list the available MCPs from the Cursor environment. Use the available-tools map when present. Otherwise inspect the `mcps/` directory Cursor exposes for enabled MCP servers.
+Before spawning investigators, list the available MCPs. In Claude Code, MCP tools are named `mcp__<server>__<tool>`. Those not yet loaded appear by name in the deferred-tools list; use ToolSearch to find and load them. Servers listed as failed to connect are unavailable for this run.
 
 Map each available MCP to one evidence category:
 
@@ -80,8 +79,8 @@ Aim for a complete **coverage map**, not a minimal one. Document the null, don't
 Launch all matching investigators in a single message so they run concurrently. Don't ask one agent to cover multiple MCPs.
 
 Subagent config (each):
-- `subagent_type`: `generalPurpose`
-- `model`: the `why investigators` line, default `grok-4.7-xhigh-fast`
+- `subagent_type`: `general-purpose`
+- `model`: `sonnet`
 - `readonly`: `false` (agent mode). **Do not use readonly/Ask mode.** It strips MCP access, which disables MCP-backed investigators entirely. Investigators still shouldn't write anything.
 
 Each investigator gets:
@@ -94,6 +93,8 @@ Each investigator gets:
 ### Investigator roster. One per available evidence category
 
 Spawn one investigator per category that has a matching MCP. Each owns exactly one tool or MCP.
+
+Cap the fan-out at four investigators per run. Source control is always one of them. Choose the other three by which records plausibly hold this decision for this repo; a solo or personal repo usually has git, chat, and docs, nothing else. Stay within the seven categories below; do not invent new ones. Give every investigator a bounded search in its prompt: grep first, read at most a handful of matches, and return partial findings within a few minutes rather than keep digging.
 
 Each entry names the category and the kind of "why" it uniquely surfaces. Use it to know what to expect back, how to name a gap when a category returns empty, and (only in the rare provably-irrelevant case) to justify a skip.
 
@@ -124,8 +125,8 @@ If your scope assessment suggests a single-commit trivial target where the PR de
 
 Spawn one synthesizer subagent:
 
-- `subagent_type`: `generalPurpose`
-- `model`: the `why synthesizer` line, default `claude-opus-5-5-max`
+- `subagent_type`: `general-purpose`
+- `model`: `sonnet`
 - `readonly`: `false` (agent mode). The synthesizer's quality check spot-verifies citations, which can require MCP access. Readonly/Ask mode strips MCPs and defeats that.
 
 The synthesizer gets:
